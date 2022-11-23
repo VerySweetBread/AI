@@ -1,124 +1,108 @@
 import kotlin.math.pow
+import kotlin.properties.Delegates
 
-class Perceptron (val input_n: Int, val hidden_n: Array<Int> = arrayOf(), val output_n: Int, val k: Double = 0.5) {
-    val layers: List<Layer>
+class Perceptron (private val layers: Array<Layer>, private val k: Double = 0.5) {
 
     init {
-        var tmp_layers = listOf<Layer>()
-
-        tmp_layers += Layer(input_n, 0)
-
-        for (layer_n in hidden_n) {
-            for (layer in 0 until layer_n) {
-                tmp_layers += Layer(layer, layer+1)
-            }
-        }
-
-        tmp_layers += Layer(output_n, tmp_layers.size)
-        tmp_layers.last().nodes = tmp_layers.last().nodes.dropLast(1)
-
-        layers = tmp_layers
-
-        for (i in layers.indices-1) {
+        layers.mapIndexed { index, layer -> layer.position = index }
+        for (i in 0..layers.size-2) {
             println(i)
             Weight(layers[i], layers[i+1])
         }
         this.count()
     }
 
-    fun count() {
-        for (layer in layers) { layer.count() }
-    }
+    private fun count() { for (layer in layers) { layer.count() } }
 
     fun input(array: Array<Double>) {
         for (index in 0 until layers[0].nodes.dropLast(1).size) {
-            layers[0].nodes[index].value = array[index]
+            layers[0].nodes[index].valuE = array[index]
         }
         this.count()
     }
 
-    fun back_propo(input: Array<Double>) {
-        for (i in input.indices) { layers.last().nodes[i].error = input[i] - layers.last().nodes[i].value }
-        for (layer in layers.dropLast(1).reversed()) {
+    private fun backPropagation(input: Array<Double>) {
+        input.mapIndexed { i, v -> layers.last().nodes[i].error = v - layers.last().nodes[i].valuE }
+        for (layer in layers.drop(1).dropLast(1).reversed()) {
             for (node in layer.nodes) {
                 node.error = 0.toDouble()
-                for (n_node in node.next_nodes) {
-                    node.error += n_node.error * layer.next_weight!!.weight[listOf(node, n_node)]!!
+                for (n_node in node.nextNodes) {
+                    node.error += n_node.error * layer.nextWeight!!.weight[listOf(node, n_node)]!!
                 }
             }
         }
         for (layer in layers.dropLast(1)) {
             for (node in layer.nodes) {
-                for (n_node in node.next_nodes) {
-                    node.parent.next_weight!!.weight[listOf(node, n_node)] =
-                        node.parent.next_weight!!.weight[listOf(node, n_node)]!! +
-                                k * n_node.error * activation_fun.logistic_(n_node.value)*node.value
+                for (n_node in node.nextNodes) {
+                    node.parent.nextWeight!!.weight[listOf(node, n_node)] =
+                        node.parent.nextWeight!!.weight[listOf(node, n_node)]!! +
+                                k * n_node.error * ActivationFun.logisticDerivative(n_node.valuE)*node.valuE
                 }
             }
         }
     }
 
-    fun teach(sets: Array<Array<Array<Double>>>, epochs: Int = 100000) {
+    fun teach(sets: Array<Array<Array<Double>>>, epochs: Int = 100000, silent: Boolean = true) {
         for (epoch in 1..epochs) {
-            println("epoch #$epoch")
+            if (!silent) println("epoch #$epoch")
             for (set in sets) {
                 this.input(set[0])
-                this.back_propo(set[1])
+                this.backPropagation(set[1])
             }
         }
     }
 
     fun output(): List<Double> {
         var output = listOf<Double>()
-        for (node in layers.last().nodes) { output += node.value }
+        for (node in layers.last().nodes) { output += node.valuE }
         return output
     }
 }
 
-open class Node(val parent: Layer, val position: Int) {
-    open var value = 0.toDouble()
+open class Node(val parent: Layer, private val position: Int) {
+    open var valuE = 0.toDouble()
     var error = 0.toDouble()
-    //    var tmp = 0.toDouble()
-    var prev_nodes = listOf<Node>()
-    var next_nodes = listOf<Node>()
+    var prevNodes = listOf<Node>()
+    var nextNodes = listOf<Node>()
 
-    open fun get_value(): Double {
-        return if (prev_nodes.isEmpty()) value
+    open fun getValue(): Double {
+        return if (prevNodes.isEmpty()) valuE
         else {
-            value = 0.toDouble()
-            for (node in prev_nodes) {
-                value += node.value * parent.prev_weight!!.weight[listOf(node, this)]!!
+            valuE = 0.toDouble()
+            for (node in prevNodes) {
+                valuE += node.valuE * parent.prevWeight!!.weight[listOf(node, this)]!!
             }
 //            tmp = value
-            value = activation_fun.logistic(value)
-            value
+            valuE = ActivationFun.logistic(valuE)
+            valuE
         }
     }
 
     override fun toString(): String {
-        return "[${parent.position}:${position} | $value ]"
+        return "[${parent.position}:${position} | $valuE ]"
     }
 }
 
 class Bias(parent: Layer, position: Int) : Node(parent, position) {
-    override var value = 1.toDouble()
-    override fun get_value() = 1.toDouble()
+    override var valuE = 1.toDouble()
+    override fun getValue() = 1.toDouble()
 }
 
-class Layer(amount: Int, val position: Int) {
+class Layer(amount: Int, bias: Boolean = true) {
+    var position by Delegates.notNull<Int>()
     var nodes = listOf<Node>()
-    var next_weight: Weight? = null
-    var prev_weight: Weight? = null
+    var nextWeight: Weight? = null
+    var prevWeight: Weight? = null
 
     init {
         for (i in 0 until amount) {
             nodes += Node(this, i)
         }
-        nodes += Bias(this, nodes.size)
+         if (bias) nodes += Bias(this, nodes.size)
     }
 
     fun count() {
-        for (node in nodes) { node.get_value() }
+        for (node in nodes) { node.getValue() }
     }
 }
 
@@ -126,15 +110,15 @@ class Weight(prev_: Layer, next_: Layer) {
     var weight = HashMap<List<Node>, Double>()
 
     init {
-        prev_.next_weight = this
-        next_.prev_weight = this
+        prev_.nextWeight = this
+        next_.prevWeight = this
 
         for (input_node in prev_.nodes) {
             for (output_node in next_.nodes) {
                 if (output_node is Bias) continue
                 weight[listOf(input_node, output_node)] = Math.random()
-                input_node.next_nodes += output_node
-                output_node.prev_nodes += input_node
+                input_node.nextNodes += output_node
+                output_node.prevNodes += input_node
             }
         }
 
@@ -142,13 +126,9 @@ class Weight(prev_: Layer, next_: Layer) {
     }
 }
 
-class activation_fun {
+class ActivationFun {
     companion object{
         fun logistic(x: Double) = 1/(1 + Math.E.pow(-x))
-        fun logistic_(x: Double) = x * (1 - x)
+        fun logisticDerivative(x: Double) = x * (1 - x)
     }
-}
-
-enum class Functions {
-    Logistic
 }
