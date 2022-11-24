@@ -2,8 +2,13 @@ import kotlin.math.pow
 import kotlin.properties.Delegates
 
 class Perceptron (private val layers: Array<Layer>, private val k: Double = 0.5) {
+    val input_layer: Layer
+    val output_layer: Layer
 
     init {
+        input_layer = layers.first()
+        output_layer = layers.last()
+
         layers.mapIndexed { index, layer -> layer.position = index }
         for (i in 0..layers.size-2) {
             println(i)
@@ -12,17 +17,17 @@ class Perceptron (private val layers: Array<Layer>, private val k: Double = 0.5)
         this.count()
     }
 
-    private fun count() { for (layer in layers) { layer.count() } }
+    private fun count() { layers.forEach { it.count() }}
 
     fun input(array: Array<Double>) {
-        for (index in 0 until layers[0].nodes.dropLast(1).size) {
-            layers[0].nodes[index].valuE = array[index]
+        input_layer.nodes.mapIndexed { index, node ->
+            if (node !is Bias) node.valuE = array[index]
         }
         this.count()
     }
 
     private fun backPropagation(input: Array<Double>) {
-        input.mapIndexed { i, v -> layers.last().nodes[i].error = v - layers.last().nodes[i].valuE }
+        output_layer.nodes.mapIndexed { index, node -> node.error = input[index] - node.valuE }
         for (layer in layers.drop(1).dropLast(1).reversed()) {
             for (node in layer.nodes) {
                 node.error = 0.toDouble()
@@ -57,6 +62,12 @@ class Perceptron (private val layers: Array<Layer>, private val k: Double = 0.5)
         for (node in layers.last().nodes) { output += node.valuE }
         return output
     }
+
+    fun output_int(): List<Int> {
+        var output = listOf<Int>()
+        for (node in layers.last().nodes) { output += if (node.valuE > 0.5) 1 else 0 }
+        return output
+    }
 }
 
 open class Node(val parent: Layer, private val position: Int) {
@@ -88,7 +99,7 @@ class Bias(parent: Layer, position: Int) : Node(parent, position) {
     override fun getValue() = 1.toDouble()
 }
 
-class Layer(amount: Int, bias: Boolean = true) {
+open class Layer(amount: Int, bias: Boolean = true) {
     var position by Delegates.notNull<Int>()
     var nodes = listOf<Node>()
     var nextWeight: Weight? = null
